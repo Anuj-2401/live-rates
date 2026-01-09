@@ -7,253 +7,201 @@
 
   <!-- Firebase SDKs -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
   <style>
     body {
       font-family: Arial, sans-serif;
       background: #0f172a;
-      color: #ffffff;
+      color: white;
       text-align: center;
       padding: 20px;
     }
-
-    h2 {
-      margin-bottom: 20px;
-    }
-
     .card {
       background: #1e293b;
-      border-radius: 12px;
       padding: 20px;
+      border-radius: 12px;
       margin: 12px auto;
       max-width: 360px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.4);
     }
-
-    .label {
-      color: #94a3b8;
-      font-size: 14px;
-    }
-
-    .rate {
-      font-size: 30px;
-      font-weight: bold;
-      margin-top: 8px;
-    }
-
-    .time {
-      font-size: 12px;
-      color: #94a3b8;
-      margin-top: 15px;
-    }
-
-    button {
+    input, button {
+      padding: 10px;
       margin: 6px;
-      padding: 8px 14px;
+      width: 90%;
       border-radius: 6px;
       border: none;
-      cursor: pointer;
-      font-size: 13px;
     }
-
+    button {
+      cursor: pointer;
+    }
     .approve {
       background: #22c55e;
-      color: #000;
-    }
-
-    .adminBox {
-      background: #020617;
-      border: 1px solid #334155;
-      padding: 12px;
-      margin-top: 25px;
-      border-radius: 10px;
+      color: black;
     }
   </style>
 </head>
 
 <body>
 
-  <h2>📈 Live Rates</h2>
-  <div id="content"></div>
+<h2>📈 Live Rates</h2>
+<div id="content"></div>
 
-  <script>
-    /* ==============================
-       🔥 FIREBASE CONFIG (REPLACE)
-       ============================== */
-    const firebaseConfig = {
-      apiKey: "AIzaSyCQecbX043x50rg95RzdJkU4CvkEhl5X8k",
-      authDomain: "webp-rl.firebaseapp.com",
-      databaseURL: "https://webp-rl-default-rtdb.firebaseio.com",
-      projectId: "webp-rl",
-      appId: "1:765611767932:web:caa4659d8b19847244f1f9"
-    };
+<script>
+/* ===============================
+   FIREBASE CONFIG (REPLACE)
+   =============================== */
+const firebaseConfig = {
+  apiKey: "AIzaSyCQecbX043x50rg95RzdJkU4CvkEhl5X8k",
+  authDomain: "webp-rl.firebaseapp.com",
+  databaseURL: "https://webp-rl-default-rtdb.firebaseio.com",
+  projectId: "webp-rl",
+  appId: "1:765611767932:web:caa4659d8b19847244f1f9"
+};
 
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.database();
+firebase.initializeApp(firebaseConfig);
 
-    /* ==============================
-       USER NAME (PERSISTENT)
-       ============================== */
-    function getUserName() {
-      let name = localStorage.getItem("userName");
-      if (!name) {
-        name = prompt(
-          "Enter your name / device name\n(e.g. Anuj iPhone, Office iPad)"
-        );
-        if (!name || name.trim() === "") {
-          name = "Unknown Device";
+const auth = firebase.auth();
+const db = firebase.database();
+const content = document.getElementById("content");
+
+/* ===============================
+   EMAIL LOGIN UI
+   =============================== */
+function showLogin() {
+  content.innerHTML = `
+    <div class="card">
+      <h3>Email Login</h3>
+      <input id="email" placeholder="Enter your email" />
+      <button onclick="sendLink()">Send Login Link</button>
+    </div>
+  `;
+}
+
+function sendLink() {
+  const email = document.getElementById("email").value.trim();
+  if (!email) return alert("Enter email");
+
+  const actionCodeSettings = {
+    url: window.location.href,
+    handleCodeInApp: true
+  };
+
+  auth.sendSignInLinkToEmail(email, actionCodeSettings)
+    .then(() => {
+      localStorage.setItem("emailForSignIn", email);
+      alert("Login link sent. Open your email.");
+    })
+    .catch(err => alert(err.message));
+}
+
+/* ===============================
+   HANDLE EMAIL LINK LOGIN
+   =============================== */
+if (auth.isSignInWithEmailLink(window.location.href)) {
+  const email = localStorage.getItem("emailForSignIn");
+  auth.signInWithEmailLink(email, window.location.href)
+    .then(() => localStorage.removeItem("emailForSignIn"))
+    .catch(err => alert(err.message));
+}
+
+/* ===============================
+   AUTH STATE HANDLER
+   =============================== */
+auth.onAuthStateChanged(user => {
+  if (!user) {
+    showLogin();
+    return;
+  }
+
+  const email = user.email;
+  const userRef = db.ref("users/" + email.replace(".", "_"));
+
+  userRef.once("value").then(snap => {
+    if (!snap.exists()) {
+      userRef.set({
+        approved: false,
+        role: "user",
+        firstSeen: new Date().toISOString()
+      });
+    }
+  });
+
+  userRef.child("approved").on("value", snap => {
+    if (snap.val() === true) {
+      showRates(email);
+    } else {
+      showWaiting(email);
+    }
+  });
+});
+
+/* ===============================
+   UI STATES
+   =============================== */
+function showWaiting(email) {
+  content.innerHTML = `
+    <div class="card">
+      <h3>⏳ Waiting for approval</h3>
+      <p>${email}</p>
+    </div>
+  `;
+}
+
+function showRates(email) {
+  content.innerHTML = `
+    <div class="card"><b>Gold 999</b><div id="gold999">--</div></div>
+    <div class="card"><b>Gold 995</b><div id="gold995">--</div></div>
+    <div class="card"><b>Silver</b><div id="silver">--</div></div>
+    <div id="updatedat"></div>
+  `;
+
+  db.ref("rates").on("value", snap => {
+    const d = snap.val();
+    if (!d) return;
+    document.getElementById("gold999").innerText = d.gold999;
+    document.getElementById("gold995").innerText = d.gold995;
+    document.getElementById("silver").innerText = d.silver;
+    document.getElementById("updatedat").innerText =
+      "Last updated: " + d.updatedat;
+  });
+
+  loadAdminPanel(email);
+}
+
+/* ===============================
+   ADMIN PANEL (EMAIL-BASED)
+   =============================== */
+function loadAdminPanel(email) {
+  const adminRef = db.ref("users/" + email.replace(".", "_") + "/role");
+
+  adminRef.once("value").then(snap => {
+    if (snap.val() !== "admin") return;
+
+    const adminDiv = document.createElement("div");
+    adminDiv.className = "card";
+    adminDiv.innerHTML = "<h3>🔐 Admin Panel</h3>";
+    document.body.appendChild(adminDiv);
+
+    db.ref("users").on("value", snap => {
+      const users = snap.val() || {};
+      adminDiv.innerHTML = "<h3>🔐 Admin Panel</h3>";
+
+      for (let key in users) {
+        if (!users[key].approved) {
+          const btn = document.createElement("button");
+          btn.className = "approve";
+          btn.innerText = "Approve: " + key.replace("_", ".");
+          btn.onclick = () => {
+            db.ref("users/" + key + "/approved").set(true);
+          };
+          adminDiv.appendChild(btn);
         }
-        localStorage.setItem("userName", name.trim());
       }
-      return name;
-    }
-
-    /* ==============================
-       DEVICE ID — iOS SAFE (IndexedDB)
-       ============================== */
-    function getDeviceId(callback) {
-      const DB_NAME = "deviceDB";
-      const STORE = "kv";
-      const KEY = "deviceId";
-
-      const open = indexedDB.open(DB_NAME, 1);
-
-      open.onupgradeneeded = function () {
-        open.result.createObjectStore(STORE);
-      };
-
-      open.onsuccess = function () {
-        const dbx = open.result;
-        const tx = dbx.transaction(STORE, "readwrite");
-        const store = tx.objectStore(STORE);
-
-        const getReq = store.get(KEY);
-
-        getReq.onsuccess = function () {
-          let id = getReq.result;
-
-          if (!id) {
-            id = "dev-" + Date.now() + "-" + Math.random().toString(16).slice(2);
-            store.put(id, KEY);
-          }
-
-          try { localStorage.setItem("deviceId", id); } catch(e){}
-
-          callback(id);
-        };
-      };
-    }
-
-    /* ==============================
-       START APP AFTER DEVICE ID
-       ============================== */
-    getDeviceId(function(deviceId) {
-      startApp(deviceId);
     });
-
-    function startApp(deviceId) {
-
-      const userName = getUserName();
-      const content = document.getElementById("content");
-      const deviceRef = db.ref("devices/" + deviceId);
-
-      /* ---------- REGISTER DEVICE ---------- */
-      deviceRef.once("value").then(snap => {
-        if (!snap.exists()) {
-          deviceRef.set({
-            approved: false,
-            name: userName,
-            firstSeen: new Date().toISOString()
-          });
-        }
-      });
-
-      /* ---------- UI SCREENS ---------- */
-      function showWaiting() {
-        content.innerHTML = `
-          <div class="card">
-            <h3>⏳ Waiting for approval</h3>
-            <p>This device is not approved yet.</p>
-            <p><b>${userName}</b></p>
-          </div>
-        `;
-      }
-
-      function showRates() {
-        content.innerHTML = `
-          <div class="card">
-            <div class="label">Gold 999</div>
-            <div id="gold999" class="rate">--</div>
-          </div>
-
-          <div class="card">
-            <div class="label">Gold 995</div>
-            <div id="gold995" class="rate">--</div>
-          </div>
-
-          <div class="card">
-            <div class="label">Silver</div>
-            <div id="silver" class="rate">--</div>
-          </div>
-
-          <div id="updatedat" class="time"></div>
-        `;
-
-        db.ref("rates").on("value", snap => {
-          const d = snap.val();
-          if (!d) return;
-
-          document.getElementById("gold999").innerText = d.gold999;
-          document.getElementById("gold995").innerText = d.gold995;
-          document.getElementById("silver").innerText = d.silver;
-          document.getElementById("updatedat").innerText =
-            "Last updated: " + d.updatedat;
-        });
-      }
-
-      /* ---------- APPROVAL LISTENER ---------- */
-      deviceRef.child("approved").on("value", snap => {
-        if (snap.val() === true) {
-          showRates();
-        } else {
-          showWaiting();
-        }
-      });
-
-      /* ---------- ADMIN PANEL ---------- */
-      db.ref("admins/" + deviceId).once("value").then(snap => {
-        if (snap.val() === true) {
-          loadAdminPanel();
-        }
-      });
-
-      function loadAdminPanel() {
-        const adminDiv = document.createElement("div");
-        adminDiv.className = "adminBox";
-        adminDiv.innerHTML = "<h3>🔐 Admin Panel</h3>";
-        document.body.appendChild(adminDiv);
-
-        db.ref("devices").on("value", snap => {
-          const devices = snap.val();
-          adminDiv.innerHTML = "<h3>🔐 Admin Panel</h3>";
-
-          for (let id in devices) {
-            if (!devices[id].approved) {
-              const label = devices[id].name || "Unknown";
-              const btn = document.createElement("button");
-              btn.className = "approve";
-              btn.innerText = "Approve: " + label;
-              btn.onclick = () => {
-                db.ref("devices/" + id + "/approved").set(true);
-              };
-              adminDiv.appendChild(btn);
-            }
-          }
-        });
-      }
-    }
-  </script>
+  });
+}
+</script>
 
 </body>
 </html>
