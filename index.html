@@ -14,30 +14,40 @@
     body {
       font-family: Arial, sans-serif;
       background: #0f172a;
-      color: white;
+      color: #ffffff;
       text-align: center;
       padding: 20px;
     }
+    h2 {
+      margin-bottom: 20px;
+    }
     .card {
       background: #1e293b;
-      padding: 20px;
       border-radius: 12px;
+      padding: 20px;
       margin: 12px auto;
       max-width: 360px;
     }
     input, button {
-      padding: 10px;
-      margin: 6px;
       width: 90%;
+      padding: 10px;
+      margin-top: 8px;
       border-radius: 6px;
       border: none;
     }
     button {
       cursor: pointer;
+      background: #22c55e;
+      color: #000;
+      font-weight: bold;
     }
     .approve {
-      background: #22c55e;
-      color: black;
+      background: #38bdf8;
+    }
+    .time {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #94a3b8;
     }
   </style>
 </head>
@@ -48,9 +58,9 @@
 <div id="content"></div>
 
 <script>
-/* ===============================
-   FIREBASE CONFIG (REPLACE)
-   =============================== */
+/* =====================================================
+   🔥 FIREBASE CONFIG — REPLACE VALUES ONLY
+   ===================================================== */
 const firebaseConfig = {
   apiKey: "AIzaSyCQecbX043x50rg95RzdJkU4CvkEhl5X8k",
   authDomain: "webp-rl.firebaseapp.com",
@@ -65,9 +75,43 @@ const auth = firebase.auth();
 const db = firebase.database();
 const content = document.getElementById("content");
 
-/* ===============================
-   EMAIL LOGIN UI
-   =============================== */
+const APP_URL = "https://anuj-2401.github.io/live-rates/"; // 🔴 CHANGE THIS
+
+let emailLinkHandled = false;
+
+/* =====================================================
+   EMAIL LINK HANDLING (RUNS FIRST)
+   ===================================================== */
+if (auth.isSignInWithEmailLink(window.location.href)) {
+  emailLinkHandled = true;
+
+  setTimeout(() => {
+    let email = localStorage.getItem("emailForSignIn");
+
+    if (!email) {
+      email = prompt("Enter your email to complete sign-in");
+    }
+
+    if (!email) {
+      alert("Email is required to sign in.");
+      return;
+    }
+
+    auth.signInWithEmailLink(email, window.location.href)
+      .then(() => {
+        localStorage.removeItem("emailForSignIn");
+        window.location.replace(APP_URL);
+      })
+      .catch(err => {
+        alert(err.code + " : " + err.message);
+      });
+
+  }, 0);
+}
+
+/* =====================================================
+   LOGIN UI
+   ===================================================== */
 function showLogin() {
   content.innerHTML = `
     <div class="card">
@@ -83,53 +127,34 @@ function sendLink() {
   if (!email) return alert("Enter email");
 
   const actionCodeSettings = {
-    url: "https://anuj-2401.github.io/live-rates/",
+    url: APP_URL,
     handleCodeInApp: true
   };
 
   auth.sendSignInLinkToEmail(email, actionCodeSettings)
     .then(() => {
       localStorage.setItem("emailForSignIn", email);
-      alert("Login link sent. Open your email.");
-    })
-    .catch(err => alert(err.message));
-}
-
-/* ===============================
-   HANDLE EMAIL LINK LOGIN
-   =============================== */
-if (auth.isSignInWithEmailLink(window.location.href)) {
-  let email = localStorage.getItem("emailForSignIn");
-
-  if (!email) {
-    email = prompt("Please enter your email to complete sign-in");
-  }
-
-  if (!email) {
-    alert("Email is required to complete sign-in");
-    return;
-  }
-
-  auth.signInWithEmailLink(email, window.location.href)
-    .then(() => {
-      localStorage.removeItem("emailForSignIn");
+      alert("Login link sent. Open your email and tap the link.");
     })
     .catch(err => {
       alert(err.code + " : " + err.message);
     });
 }
 
-/* ===============================
+/* =====================================================
    AUTH STATE HANDLER
-   =============================== */
+   ===================================================== */
 auth.onAuthStateChanged(user => {
   if (!user) {
-    showLogin();
+    if (!emailLinkHandled) {
+      showLogin();
+    }
     return;
   }
 
   const email = user.email;
-  const userRef = db.ref("users/" + email.replace(".", "_"));
+  const emailKey = email.replace(/\./g, "_");
+  const userRef = db.ref("users/" + emailKey);
 
   userRef.once("value").then(snap => {
     if (!snap.exists()) {
@@ -150,9 +175,9 @@ auth.onAuthStateChanged(user => {
   });
 });
 
-/* ===============================
+/* =====================================================
    UI STATES
-   =============================== */
+   ===================================================== */
 function showWaiting(email) {
   content.innerHTML = `
     <div class="card">
@@ -167,12 +192,13 @@ function showRates(email) {
     <div class="card"><b>Gold 999</b><div id="gold999">--</div></div>
     <div class="card"><b>Gold 995</b><div id="gold995">--</div></div>
     <div class="card"><b>Silver</b><div id="silver">--</div></div>
-    <div id="updatedat"></div>
+    <div class="time" id="updatedat"></div>
   `;
 
   db.ref("rates").on("value", snap => {
     const d = snap.val();
     if (!d) return;
+
     document.getElementById("gold999").innerText = d.gold999;
     document.getElementById("gold995").innerText = d.gold995;
     document.getElementById("silver").innerText = d.silver;
@@ -183,13 +209,13 @@ function showRates(email) {
   loadAdminPanel(email);
 }
 
-/* ===============================
+/* =====================================================
    ADMIN PANEL (EMAIL-BASED)
-   =============================== */
+   ===================================================== */
 function loadAdminPanel(email) {
-  const adminRef = db.ref("users/" + email.replace(".", "_") + "/role");
+  const emailKey = email.replace(/\./g, "_");
 
-  adminRef.once("value").then(snap => {
+  db.ref("users/" + emailKey + "/role").once("value").then(snap => {
     if (snap.val() !== "admin") return;
 
     const adminDiv = document.createElement("div");
@@ -201,13 +227,13 @@ function loadAdminPanel(email) {
       const users = snap.val() || {};
       adminDiv.innerHTML = "<h3>🔐 Admin Panel</h3>";
 
-      for (let key in users) {
-        if (!users[key].approved) {
+      for (let k in users) {
+        if (!users[k].approved) {
           const btn = document.createElement("button");
           btn.className = "approve";
-          btn.innerText = "Approve: " + key.replace("_", ".");
+          btn.innerText = "Approve: " + k.replace(/_/g, ".");
           btn.onclick = () => {
-            db.ref("users/" + key + "/approved").set(true);
+            db.ref("users/" + k + "/approved").set(true);
           };
           adminDiv.appendChild(btn);
         }
@@ -218,6 +244,4 @@ function loadAdminPanel(email) {
 </script>
 
 </body>
-
 </html>
-
