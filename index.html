@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Live Rates</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: #ffffff;
+      text-align: center;
+      padding: 20px;
+    }
+
+    h2 {
+      margin-bottom: 20px;
+    }
+
+    .card {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 20px;
+      margin: 12px auto;
+      max-width: 360px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+    }
+
+    .label {
+      color: #94a3b8;
+      font-size: 14px;
+    }
+
+    .rate {
+      font-size: 30px;
+      font-weight: bold;
+      margin-top: 8px;
+    }
+
+    .time {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-top: 15px;
+    }
+
+    button {
+      margin: 6px;
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .approve {
+      background: #22c55e;
+      color: #000;
+    }
+
+    .adminBox {
+      background: #020617;
+      border: 1px solid #334155;
+      padding: 12px;
+      margin-top: 25px;
+      border-radius: 10px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <h2>📈 Live Rates</h2>
+
+  <!-- MAIN CONTENT AREA -->
+  <div id="content"></div>
+
+  <!-- ALL SCRIPT GOES AT BOTTOM -->
+  <script>
+    /* ==============================
+       🔥 FIREBASE CONFIG (REPLACE)
+       ============================== */
+    const firebaseConfig = {
+      apiKey: "AIzaSyCQecbX043x50rg95RzdJkU4CvkEhl5X8k",
+      authDomain: "webp-rl.firebaseapp.com",
+      databaseURL: "https://webp-rl-default-rtdb.firebaseio.com",
+      projectId: "webp-rl",
+      appId: "1:765611767932:web:caa4659d8b19847244f1f9"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    /* ==============================
+       DEVICE ID (BROWSER SAFE)
+       ============================== */
+    function getDeviceId() {
+      let id = localStorage.getItem("deviceId");
+      if (!id) {
+        id = "dev-" + Date.now() + "-" + Math.random().toString(16).slice(2);
+        localStorage.setItem("deviceId", id);
+      }
+      return id;
+    }
+
+    const deviceId = getDeviceId();
+
+    /* ==============================
+       DEVICE REGISTRATION
+       ============================== */
+    const deviceRef = db.ref("devices/" + deviceId);
+
+    deviceRef.once("value").then(snap => {
+      if (!snap.exists()) {
+        deviceRef.set({
+          approved: false,
+          firstSeen: new Date().toISOString()
+        });
+      }
+    });
+
+    const content = document.getElementById("content");
+
+    /* ==============================
+       UI SCREENS
+       ============================== */
+    function showWaiting() {
+      content.innerHTML = `
+        <div class="card">
+          <h3>⏳ Waiting for approval</h3>
+          <p>This device is not approved yet.</p>
+        </div>
+      `;
+    }
+
+    function showRates() {
+      content.innerHTML = `
+        <div class="card">
+          <div class="label">Gold 995</div>
+          <div id="gold995" class="rate">--</div>
+        </div>
+
+        <div class="card">
+          <div class="label">Gold 999</div>
+          <div id="gold999" class="rate">--</div>
+        </div>
+
+        <div class="card">
+          <div class="label">Silver</div>
+          <div id="silver" class="rate">--</div>
+        </div>
+
+        <div id="updatedat" class="time"></div>
+      `;
+
+      db.ref("rates").on("value", snap => {
+        const d = snap.val();
+        if (!d) return;
+
+        document.getElementById("gold995").innerText = d.gold995;
+        document.getElementById("gold999").innerText = d.gold999;
+        document.getElementById("silver").innerText = d.silver;
+        document.getElementById("updatedat").innerText =
+          "Last updated: " + d.updatedat;
+      });
+    }
+
+    /* ==============================
+       APPROVAL LISTENER
+       ============================== */
+    deviceRef.child("approved").on("value", snap => {
+      if (snap.val() === true) {
+        showRates();
+      } else {
+        showWaiting();
+      }
+    });
+
+    /* ==============================
+       ADMIN PANEL
+       ============================== */
+    db.ref("admins/" + deviceId).once("value").then(snap => {
+      if (snap.val() === true) {
+        loadAdminPanel();
+      }
+    });
+
+    function loadAdminPanel() {
+      const adminDiv = document.createElement("div");
+      adminDiv.className = "adminBox";
+      adminDiv.innerHTML = "<h3>🔐 Admin Panel</h3>";
+      document.body.appendChild(adminDiv);
+
+      db.ref("devices").on("value", snap => {
+        const devices = snap.val();
+        adminDiv.innerHTML = "<h3>🔐 Admin Panel</h3>";
+
+        for (let id in devices) {
+          if (!devices[id].approved) {
+            const btn = document.createElement("button");
+            btn.className = "approve";
+            btn.innerText = "Approve device";
+            btn.onclick = () => {
+              db.ref("devices/" + id + "/approved").set(true);
+            };
+            adminDiv.appendChild(btn);
+          }
+        }
+      });
+    }
+  </script>
+
+</body>
+</html>
