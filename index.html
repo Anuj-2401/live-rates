@@ -75,11 +75,8 @@
 <body>
 
   <h2>📈 Live Rates</h2>
-
-  <!-- MAIN CONTENT AREA -->
   <div id="content"></div>
 
-  <!-- ALL SCRIPT GOES AT BOTTOM -->
   <script>
     /* ==============================
        🔥 FIREBASE CONFIG (REPLACE)
@@ -96,121 +93,165 @@
     const db = firebase.database();
 
     /* ==============================
-       DEVICE ID (BROWSER SAFE)
+       USER NAME (PERSISTENT)
        ============================== */
-    function getDeviceId() {
-      let id = localStorage.getItem("deviceId");
-      if (!id) {
-        id = "dev-" + Date.now() + "-" + Math.random().toString(16).slice(2);
-        localStorage.setItem("deviceId", id);
+    function getUserName() {
+      let name = localStorage.getItem("userName");
+      if (!name) {
+        name = prompt(
+          "Enter your name / device name\n(e.g. Anuj iPhone, Office iPad)"
+        );
+        if (!name || name.trim() === "") {
+          name = "Unknown Device";
+        }
+        localStorage.setItem("userName", name.trim());
       }
-      return id;
-    }
-
-    const deviceId = getDeviceId();
-
-    /* ==============================
-       DEVICE REGISTRATION
-       ============================== */
-    const deviceRef = db.ref("devices/" + deviceId);
-
-    deviceRef.once("value").then(snap => {
-      if (!snap.exists()) {
-        deviceRef.set({
-          approved: false,
-          firstSeen: new Date().toISOString()
-        });
-      }
-    });
-
-    const content = document.getElementById("content");
-
-    /* ==============================
-       UI SCREENS
-       ============================== */
-    function showWaiting() {
-      content.innerHTML = `
-        <div class="card">
-          <h3>⏳ Waiting for approval</h3>
-          <p>This device is not approved yet.</p>
-        </div>
-      `;
-    }
-
-    function showRates() {
-      content.innerHTML = `
-        <div class="card">
-          <div class="label">Gold 995</div>
-          <div id="gold995" class="rate">--</div>
-        </div>
-
-        <div class="card">
-          <div class="label">Gold 999</div>
-          <div id="gold999" class="rate">--</div>
-        </div>
-
-        <div class="card">
-          <div class="label">Silver</div>
-          <div id="silver" class="rate">--</div>
-        </div>
-
-        <div id="updatedat" class="time"></div>
-      `;
-
-      db.ref("rates").on("value", snap => {
-        const d = snap.val();
-        if (!d) return;
-
-        document.getElementById("gold995").innerText = d.gold995;
-        document.getElementById("gold999").innerText = d.gold999;
-        document.getElementById("silver").innerText = d.silver;
-        document.getElementById("updatedat").innerText =
-          "Last updated: " + d.updatedat;
-      });
+      return name;
     }
 
     /* ==============================
-       APPROVAL LISTENER
+       DEVICE ID — iOS SAFE (IndexedDB)
        ============================== */
-    deviceRef.child("approved").on("value", snap => {
-      if (snap.val() === true) {
-        showRates();
-      } else {
-        showWaiting();
-      }
-    });
+    function getDeviceId(callback) {
+      const DB_NAME = "deviceDB";
+      const STORE = "kv";
+      const KEY = "deviceId";
 
-    /* ==============================
-       ADMIN PANEL
-       ============================== */
-    db.ref("admins/" + deviceId).once("value").then(snap => {
-      if (snap.val() === true) {
-        loadAdminPanel();
-      }
-    });
+      const open = indexedDB.open(DB_NAME, 1);
 
-    function loadAdminPanel() {
-      const adminDiv = document.createElement("div");
-      adminDiv.className = "adminBox";
-      adminDiv.innerHTML = "<h3>🔐 Admin Panel</h3>";
-      document.body.appendChild(adminDiv);
+      open.onupgradeneeded = function () {
+        open.result.createObjectStore(STORE);
+      };
 
-      db.ref("devices").on("value", snap => {
-        const devices = snap.val();
-        adminDiv.innerHTML = "<h3>🔐 Admin Panel</h3>";
+      open.onsuccess = function () {
+        const dbx = open.result;
+        const tx = dbx.transaction(STORE, "readwrite");
+        const store = tx.objectStore(STORE);
 
-        for (let id in devices) {
-          if (!devices[id].approved) {
-            const btn = document.createElement("button");
-            btn.className = "approve";
-            btn.innerText = "Approve device";
-            btn.onclick = () => {
-              db.ref("devices/" + id + "/approved").set(true);
-            };
-            adminDiv.appendChild(btn);
+        const getReq = store.get(KEY);
+
+        getReq.onsuccess = function () {
+          let id = getReq.result;
+
+          if (!id) {
+            id = "dev-" + Date.now() + "-" + Math.random().toString(16).slice(2);
+            store.put(id, KEY);
           }
+
+          try { localStorage.setItem("deviceId", id); } catch(e){}
+
+          callback(id);
+        };
+      };
+    }
+
+    /* ==============================
+       START APP AFTER DEVICE ID
+       ============================== */
+    getDeviceId(function(deviceId) {
+      startApp(deviceId);
+    });
+
+    function startApp(deviceId) {
+
+      const userName = getUserName();
+      const content = document.getElementById("content");
+      const deviceRef = db.ref("devices/" + deviceId);
+
+      /* ---------- REGISTER DEVICE ---------- */
+      deviceRef.once("value").then(snap => {
+        if (!snap.exists()) {
+          deviceRef.set({
+            approved: false,
+            name: userName,
+            firstSeen: new Date().toISOString()
+          });
         }
       });
+
+      /* ---------- UI SCREENS ---------- */
+      function showWaiting() {
+        content.innerHTML = `
+          <div class="card">
+            <h3>⏳ Waiting for approval</h3>
+            <p>This device is not approved yet.</p>
+            <p><b>${userName}</b></p>
+          </div>
+        `;
+      }
+
+      function showRates() {
+        content.innerHTML = `
+          <div class="card">
+            <div class="label">Gold 999</div>
+            <div id="gold999" class="rate">--</div>
+          </div>
+
+          <div class="card">
+            <div class="label">Gold 995</div>
+            <div id="gold995" class="rate">--</div>
+          </div>
+
+          <div class="card">
+            <div class="label">Silver</div>
+            <div id="silver" class="rate">--</div>
+          </div>
+
+          <div id="updatedat" class="time"></div>
+        `;
+
+        db.ref("rates").on("value", snap => {
+          const d = snap.val();
+          if (!d) return;
+
+          document.getElementById("gold999").innerText = d.gold999;
+          document.getElementById("gold995").innerText = d.gold995;
+          document.getElementById("silver").innerText = d.silver;
+          document.getElementById("updatedat").innerText =
+            "Last updated: " + d.updatedat;
+        });
+      }
+
+      /* ---------- APPROVAL LISTENER ---------- */
+      deviceRef.child("approved").on("value", snap => {
+        if (snap.val() === true) {
+          showRates();
+        } else {
+          showWaiting();
+        }
+      });
+
+      /* ---------- ADMIN PANEL ---------- */
+      db.ref("admins/" + deviceId).once("value").then(snap => {
+        if (snap.val() === true) {
+          loadAdminPanel();
+        }
+      });
+
+      function loadAdminPanel() {
+        const adminDiv = document.createElement("div");
+        adminDiv.className = "adminBox";
+        adminDiv.innerHTML = "<h3>🔐 Admin Panel</h3>";
+        document.body.appendChild(adminDiv);
+
+        db.ref("devices").on("value", snap => {
+          const devices = snap.val();
+          adminDiv.innerHTML = "<h3>🔐 Admin Panel</h3>";
+
+          for (let id in devices) {
+            if (!devices[id].approved) {
+              const label = devices[id].name || "Unknown";
+              const btn = document.createElement("button");
+              btn.className = "approve";
+              btn.innerText = "Approve: " + label;
+              btn.onclick = () => {
+                db.ref("devices/" + id + "/approved").set(true);
+              };
+              adminDiv.appendChild(btn);
+            }
+          }
+        });
+      }
     }
   </script>
 
